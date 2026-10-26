@@ -2,11 +2,11 @@
 name: hello
 description: "Checks that this machine or cluster runs toolshed images: prints the OS, the user, and the GPU it sees. Reach for it first on a new cluster, before any real tool."
 metadata:
-  version: 1.0.0
+  version: 1.0.1
 ---
 # hello
 
-Image: `ghcr.io/brineylab/toolshed/hello:1.0.0`
+Image: `ghcr.io/brineylab/toolshed-dev/hello:1.0.1`
 
 ## Commands
 
@@ -31,13 +31,13 @@ No GPU needed; with one, it names it. Seconds.
 On a laptop:
 
 ```bash
-podman run --rm ghcr.io/brineylab/toolshed/hello:1.0.0 hello
+podman run --rm ghcr.io/brineylab/toolshed-dev/hello:1.0.1 hello
 ```
 
 On a Slurm cluster with pyxis:
 
 ```bash
-srun --gres=gpu:1 --container-image=ghcr.io#brineylab/toolshed/hello:1.0.0 hello
+srun --gres=gpu:1 --container-image=ghcr.io#brineylab/toolshed-dev/hello:1.0.1 hello
 ```
 
 ## Gotchas
