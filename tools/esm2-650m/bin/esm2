@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -I
 """esm2: pseudo-log-likelihoods, embeddings, and masked infilling with the ESM-2 model in $ESM2_MODEL."""
 import argparse, os, sys
 

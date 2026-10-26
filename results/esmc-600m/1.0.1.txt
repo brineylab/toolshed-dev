@@ -1,0 +1,18 @@
+---
+tool: esmc-600m
+version: 1.0.1
+image: ghcr.io/brineylab/toolshed/esmc-600m@sha256:8cbaf4520bc4afb5010cb4728da937ecf7f23bed9a2faea6b4c05ae497d6dafe
+digest: sha256:8cbaf4520bc4afb5010cb4728da937ecf7f23bed9a2faea6b4c05ae497d6dafe
+runner: srun -p l40s --gres=gpu:1 --time=00:30:00
+host: slurm-login-slinky-db689f69b-57nbw
+started: 2026-10-26T21:56:27Z
+exit: 0
+---
+srun: note: containerized steps start in your home (/mnt/home/briney), not the directory you submitted from (~/toolshed). Relative paths in an srun line resolve in your home; pass --container-workdir="$(pwd -P)" or use absolute paths.
+srun: job 3308 queued and waiting for resources
+srun: job 3308 has been allocated resources
+pyxis: importing docker image: ghcr.io#brineylab/toolshed/esmc-600m@sha256:8cbaf4520bc4afb5010cb4728da937ecf7f23bed9a2faea6b4c05ae497d6dafe
+pyxis: imported docker image: ghcr.io#brineylab/toolshed/esmc-600m@sha256:8cbaf4520bc4afb5010cb4728da937ecf7f23bed9a2faea6b4c05ae497d6dafe
+node: gpu-swann-0
+GPU 0: NVIDIA L40S (UUID: GPU-fdb5bacc-2c29-e0a7-2bd0-de787dbdd5f4)
+ok: peptide pll -50.1662, reversed pll -55.1597, ubiquitin pll -3.7655 | ubiquitin -0.05/residue | filled MKTAYIAKLRQISFLKSH

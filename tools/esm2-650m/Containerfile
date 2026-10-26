@@ -1,9 +1,7 @@
 FROM docker.io/pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime
 ENV NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
 RUN pip install --no-cache-dir --break-system-packages transformers==5.20.2 huggingface_hub==2.3.0 numpy==2.5.4
-ENV HF_HOME=/opt/hf HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
-COPY bin/esm2 /usr/local/bin/esm2
-RUN chmod +x /usr/local/bin/esm2
-ENV ESM2_MODEL=facebook/esm2_t33_650M_UR50D
-RUN HF_HUB_OFFLINE=0 python -c "import os; from huggingface_hub import snapshot_download; snapshot_download(os.environ['ESM2_MODEL'], allow_patterns=['*.json', '*.safetensors', 'vocab.txt'])"
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 ESM2_MODEL=/opt/model
+RUN HF_HUB_OFFLINE=0 python3 -I -c "from huggingface_hub import snapshot_download; snapshot_download('facebook/esm2_t33_650M_UR50D', revision='08e4846e537177426273712802403f7ba8261b6c', local_dir='/opt/model', allow_patterns=['*.json', '*.safetensors', 'vocab.txt'])"
+COPY --chmod=755 bin/esm2 /usr/local/bin/esm2
 COPY test /toolshed/test

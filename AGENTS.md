@@ -44,6 +44,7 @@ scripts/test <name> srun --partition=<p> --gres=gpu:1 --time=00:30:00   # on a l
 - **Weights are in the image**, fetched at build time, never at run time. `HF_HUB_OFFLINE=1` (and `TRANSFORMERS_OFFLINE=1` with transformers) is set in the image. The test passes with `--network none`.
 - **The Containerfile puts the environment first and the weights last**, then ends with `COPY test /toolshed/test`. Every package and base image is pinned.
 - **A GPU tool's image sets `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=compute,utility`**, on a glibc base, or pyxis gives it no GPU.
+- **A Python tool loads its model from a path in the image, pinned to a revision, and runs under `python3 -I`**: pyxis passes the caller's environment and home in.
 - **Every example in a skill is a full command line**, the program on PATH with its arguments. Pyxis ignores entrypoints.
 - **Any change under `tools/<name>/` bumps `metadata.version`**, prose included. A published tag is never overwritten; callers always name a version.
 - **The skill's frontmatter is `name` (the directory's), `description`, `metadata.version`.** Everything else is prose. No declared parameter lists.
