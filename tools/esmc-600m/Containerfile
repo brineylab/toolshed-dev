@@ -1,0 +1,9 @@
+FROM docker.io/pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime
+ENV NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
+RUN pip install --no-cache-dir --break-system-packages transformers==5.20.2 huggingface_hub==2.3.0 numpy==2.5.4
+ENV HF_HOME=/opt/hf HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+COPY bin/esmc /usr/local/bin/esmc
+RUN chmod +x /usr/local/bin/esmc
+ENV ESMC_MODEL=biohub/ESMC-600M
+RUN HF_HUB_OFFLINE=0 python -c "import os; from huggingface_hub import snapshot_download; snapshot_download(os.environ['ESMC_MODEL'], allow_patterns=['*.json', '*.safetensors'])"
+COPY test /toolshed/test

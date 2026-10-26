@@ -1,0 +1,16 @@
+---
+tool: esmc-600m
+version: 1.0.0
+image: ghcr.io/brineylab/toolshed/esmc-600m@sha256:650c2e994c0c7eab127e26b7dc79177bcf2e251c9908c4884ec97bd367e2425d
+digest: sha256:650c2e994c0c7eab127e26b7dc79177bcf2e251c9908c4884ec97bd367e2425d
+runner: srun -p l40s --gres=gpu:1 --time=00:30:00
+host: slurm-login-slinky-db689f69b-57nbw
+started: 2026-10-26T17:42:25Z
+exit: 0
+---
+srun: note: containerized steps start in your home (/mnt/home/briney), not the directory you submitted from (~/toolshed). Relative paths in an srun line resolve in your home; pass --container-workdir="$(pwd -P)" or use absolute paths.
+pyxis: importing docker image: ghcr.io#brineylab/toolshed/esmc-600m@sha256:650c2e994c0c7eab127e26b7dc79177bcf2e251c9908c4884ec97bd367e2425d
+pyxis: imported docker image: ghcr.io#brineylab/toolshed/esmc-600m@sha256:650c2e994c0c7eab127e26b7dc79177bcf2e251c9908c4884ec97bd367e2425d
+node: gpu-swann-0
+GPU 0: NVIDIA L40S (UUID: GPU-ab31b94e-1404-7858-604e-4f2a6b62d33e)
+ok: peptide pll -50.1662, reversed pll -55.1597 | filled MKTAYIAKLRQISFLKSH
