@@ -1,0 +1,48 @@
+name: seed
+
+# Creates ghcr.io/<owner>/<repo>/<tool> with a one-file placeholder tagged `seed`. Because this
+# repository's GITHUB_TOKEN creates it, the package is public and linked here, inheriting this
+# repository's permissions, so a member then pushes the real candidate with their own token
+# (scripts/push dispatches this and waits). Nothing here checks out the repository or runs a
+# Containerfile: the placeholder is FROM scratch and one file.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tool:
+        description: "The tool's name, as its directory under tools/"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    env:
+      TOOL: ${{ inputs.tool }}
+    steps:
+      - run: |
+          [[ "$TOOL" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || { echo "::error::'$TOOL' is not lowercase words joined by hyphens"; exit 1; }
+      - env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: docker login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin <<< "$TOKEN"
+      - run: |
+          image="$REGISTRY/${GITHUB_REPOSITORY,,}/$TOOL"
+          if docker manifest inspect "$image:seed" > /dev/null 2>&1; then
+            echo "$image exists; nothing to do"; exit 0
+          fi
+          mkdir seed && cd seed
+          echo "a placeholder: the tool's images are pushed by whoever builds them" > README
+          printf 'FROM scratch\nLABEL org.opencontainers.image.source=https://github.com/%s\nCOPY README /README\n' "$GITHUB_REPOSITORY" > Dockerfile
+          docker build -q -t "$image:seed" .
+          docker push "$image:seed"
+          echo "created $image, public and linked to $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
