@@ -1,0 +1,7 @@
+FROM docker.io/pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime
+ENV NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir --break-system-packages "boltz[cuda]==2.2.1" "cuequivariance==0.6.1" "cuequivariance-torch==0.6.1" "cuequivariance-ops-cu12==0.6.1" "cuequivariance-ops-torch-cu12==0.6.1"
+ENV BOLTZ_CACHE=/opt/boltz-cache HF_HUB_OFFLINE=1
+RUN python3 -I -c "import pathlib, tarfile, urllib.request; rev = '6fdef46d763fee7fbb83ca5501ccceff43b85607'; base = f'https://huggingface.co/boltz-community/boltz-2/resolve/{rev}'; cache = pathlib.Path('/opt/boltz-cache'); cache.mkdir(parents = True); [urllib.request.urlretrieve(f'{base}/{n}', cache / n) for n in ('mols.tar', 'boltz2_conf.ckpt', 'boltz2_aff.ckpt')]; tarfile.open(cache / 'mols.tar').extractall(cache)"
+COPY test /toolshed/test

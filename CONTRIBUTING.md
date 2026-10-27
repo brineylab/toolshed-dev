@@ -42,6 +42,8 @@ metadata:
 
 `test/run.sh` runs the commands the skill documents on a fixture of kilobytes with a known answer, and checks the answer. It exits 0 iff the tool works, writes only under `/tmp`, passes with no network, and fits in one GPU and 30 minutes. It checks the environment, the weights, and that the skill's examples are true, in one step.
 
+**The fixture is small, but it must be the size the tool takes seriously.** A tool often has a threshold below which it takes a cheaper path: a fused kernel it only compiles past a certain length, a chunked loop it only enters past a certain batch, a database it only opens past a certain query. A fixture under every threshold tests a tool nobody will run. `boltz-2@1.0.0` passed its test on a tiny complex and was published, then failed on the first real antibody: past cuEquivariance's 100-residue crossover, Triton compiles a kernel at run time and needs `gcc`, which the image did not have. `1.0.1` carries a 198-residue fixture. So before you settle the fixture, read what the tool does differently as its input grows (sequence length, number of chains, batch size, file size) and put the fixture on the far side of the first such threshold, as small as that allows. Say in the skill's *Gotchas* which threshold the fixture crosses, so the next person knows what the test does and does not cover.
+
 ## Building, pushing, and testing
 
 You build your tool's image, push it, and test it where it will be used. CI never builds or runs a tool image.
