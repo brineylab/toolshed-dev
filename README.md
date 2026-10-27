@@ -45,4 +45,4 @@ Every image carries its own test: `bash /toolshed/test/run.sh` inside it exits 0
 
 A tool's version is its image tag, and a published tag is never overwritten. Always name a version; there is no `latest`.
 
-CI checks every pull request: the tool's rules, an unpublished version, a public amd64 candidate, and a record of that candidate's passing test. On merge it copies the candidate to `<name>:<version>`. CI never builds or runs an image.
+CI checks every pull request: the tool's rules, an unpublished version, a public amd64 candidate, and a record of that candidate's passing test. On merge it copies the candidate to `<name>:<version>`. CI never builds or runs a tool image: it checks, promotes, and creates a new tool's package with a placeholder.

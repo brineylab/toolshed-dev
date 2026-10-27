@@ -1,6 +1,6 @@
 name: tools
 
-# On GitHub's hosted runners only. CI never builds, pulls, or runs an image: it reads the
+# On GitHub's hosted runners only. This never builds, pulls, or runs an image: it reads the
 # registry, and promote copies within it. check: every pull request, the changed tools' rules,
 # an unpublished version, a public amd64 candidate, and a record of that candidate's passing
 # test. promote: a push to main that changes a tool, copying the candidate the merge commit's

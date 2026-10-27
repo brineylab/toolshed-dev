@@ -43,12 +43,12 @@ metadata:
 
 ## Building, pushing, and testing
 
-You build your tool's image, push it, and test it where it will be used. CI never builds or runs an image.
+You build your tool's image, push it, and test it where it will be used. CI never builds or runs a tool image.
 
 1. **Commit** the tool directory. The image's tag is the candidate, `<name>:src-<tree>`, where `<tree>` is git's hash of the committed `tools/<name>/`, so `scripts/build` refuses uncommitted changes there.
 2. **Build:** `scripts/build <name>`. It builds for `linux/amd64` (the clusters' architecture, even on an Apple Silicon Mac), labels the image with this repository, and prints the candidate's name.
 3. **Try it:** `podman run --rm --network none <candidate> bash /toolshed/test/run.sh`.
-4. **Push:** once per machine, `podman login ghcr.io` as yourself with a GitHub token that has `write:packages` (`gh auth refresh -s write:packages`, then `gh auth token | podman login ghcr.io -u <you> --password-stdin`). Then `scripts/push <name>`. A new tool's first push creates its package, which GitHub makes private. `scripts/push` says so and prints the package's settings link: make it public there, once, and under *Manage Actions access* make sure this repository has Write (add it if it is not listed), then run `scripts/push <name>` again. It exits 0 when the candidate can be pulled with no login.
+4. **Push:** once per machine, `podman login ghcr.io` as yourself with a GitHub token that has `write:packages` (`gh auth refresh -s write:packages`, then `gh auth token | podman login ghcr.io -u <you> --password-stdin`). `gh` stays signed in: a tool's first push asks this repository's `seed.yml` to create its package, public and linked, and waits for it. Then `scripts/push <name>`. It exits 0 when the candidate can be pulled with no login.
 5. **Test it where it will be used**, from a clone of your branch. On a cluster's login node:
 
    ```bash

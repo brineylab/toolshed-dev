@@ -142,20 +142,37 @@ class PublishedTagsTests(unittest.TestCase):
             raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
         self.stub(missing_manifest)
         self.assertIsNone(check.inspect("ghcr.io/o/r", "t", "src-x"))
+    def main(self, *args):
+        out = io.StringIO()
+        argv, stdout, stderr = sys.argv, sys.stdout, sys.stderr
+        sys.argv, sys.stdout, sys.stderr = ["check.py", *args, "--registry", "ghcr.io/o/r"], out, io.StringIO()
+        try:
+            return check.main(), out.getvalue()
+        finally:
+            sys.argv, sys.stdout, sys.stderr = argv, stdout, stderr
     def test_a_bad_name_is_reported_without_asking_the_registry(self):
         def fake(req):
             raise AssertionError("registry asked about an invalid name")
         self.stub(fake)
         d = tool(Path(tempfile.mkdtemp()), name="Esm2")
-        out = io.StringIO()
-        argv, stdout = sys.argv, sys.stdout
-        sys.argv, sys.stdout = ["check.py", str(d), "--registry", "ghcr.io/o/r"], out
-        try:
-            code = check.main()
-        finally:
-            sys.argv, sys.stdout = argv, stdout
+        code, out = self.main(str(d))
         self.assertEqual(code, 1)
-        self.assertIn("tools/Esm2: name", out.getvalue())
+        self.assertIn("tools/Esm2: name", out)
+    def test_published_exits_0_when_the_package_can_be_read(self):
+        self.stub(lambda req: Response({"token": "x"} if "/token?" in (req if isinstance(req, str) else req.full_url) else {"tags": ["seed"]}))
+        self.assertEqual(self.main("--published", "tools/t")[0], 0)
+    def test_published_exits_4_when_the_package_is_missing_or_private(self):
+        def refused_token(req):
+            raise urllib.error.HTTPError(str(req), 403, "Forbidden", {}, None)
+        self.stub(refused_token)
+        self.assertEqual(self.main("--published", "tools/t")[0], 4)
+        def refused_tags(req):
+            url = req if isinstance(req, str) else req.full_url
+            if "/token?" in url:
+                return Response({"token": "x"})
+            raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
+        self.stub(refused_tags)
+        self.assertEqual(self.main("--published", "tools/t")[0], 4)
 
 if __name__ == "__main__":
     unittest.main()

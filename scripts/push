@@ -1,19 +1,35 @@
 #!/usr/bin/env bash
-# scripts/push <name>: push tools/<name>'s candidate. Exits 0 when it can then be pulled with no
-# credential, and 3, with the package's settings link, while its package is private.
+# scripts/push <name>: push tools/<name>'s candidate. A new tool's package is first created, public
+# and linked to the shed, by the shed's seed workflow (gh must be signed in). Exits 0 when the
+# candidate can then be pulled with no credential, and 3, with the package's settings link, while
+# its package is private.
 set -euo pipefail
 [[ $# -eq 1 ]] || { echo "usage: scripts/push <name>" >&2; exit 2; }
 cd "$(dirname "$0")/.."
 image=$(python3 -I scripts/check.py --candidate "tools/$1")
-podman push "$image"
+path=${image#*/}; owner=${path%%/*}; repo=${path#*/}; repo=${repo%%/*}
 err=$(mktemp)
+set +e
+python3 -I scripts/check.py --published "tools/$1" 2> "$err"
+code=$?
+set -e
+if [[ $code -eq 4 ]]; then
+  echo "no public package for $1 yet: asking $owner/$repo's seed workflow to create it"
+  if gh workflow run seed.yml -R "$owner/$repo" -f "tool=$1"; then
+    n=0  # the run queues, starts, and pushes the placeholder: a minute or two
+    until python3 -I scripts/check.py --published "tools/$1" 2> /dev/null; do
+      (( ++n <= 60 )) || { echo "the seed workflow made no public package in 5 minutes; pushing anyway"; break; }
+      sleep 5
+    done
+  fi
+elif [[ $code -ne 0 ]]; then cat "$err" >&2; exit "$code"; fi  # a registry error, not a missing package
+podman push "$image"
 set +e
 ref=$(python3 -I scripts/check.py --resolve "tools/$1" 2> "$err")
 code=$?
 set -e
 if [[ $code -eq 0 ]]; then echo "$ref"; exit 0; fi
 if [[ $code -ne 4 ]]; then cat "$err" >&2; exit "$code"; fi  # an error, not a private package
-path=${image#*/}; owner=${path%%/*}; repo=${path#*/}; repo=${repo%%/*}
 echo "pushed, but the package is private: make it public at https://github.com/orgs/$owner/packages/container/$repo%2F$1/settings"
 echo "and there, under Manage Actions access, give $owner/$repo Write if it is not listed, so promote can publish"
 exit 3

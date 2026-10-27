@@ -6,23 +6,29 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import check  # noqa: E402
 
-# check.py's --candidate and --resolve, without git remotes or the registry; frontmatter is the real one.
+# check.py's --candidate, --resolve, and --published, without git remotes or the registry; frontmatter is the real one.
+# A package is public when FAKE_PUBLIC is set or once a seed dispatch gh did not refuse is in the log.
 FAKE_CHECK = f"""import importlib.util, os, sys
 spec = importlib.util.spec_from_file_location("real_check", {str(SCRIPTS / "check.py")!r})
 real = importlib.util.module_from_spec(spec); spec.loader.exec_module(real)
 frontmatter = real.frontmatter
 if __name__ == "__main__":
+    seeded = not os.environ.get("FAKE_GH_EXIT") and any(l.startswith("workflow run seed.yml") for l in
+        (open(os.environ["FAKE_LOG"]).read().splitlines() if os.path.exists(os.environ["FAKE_LOG"]) else []))
     if "--candidate" in sys.argv:
         print("ghcr.io/owner/repo/t:src-abc")
-    elif os.environ.get("FAKE_PUBLIC"):
-        print("ghcr.io/owner/repo/t@sha256:d")
     elif os.environ.get("FAKE_NETWORK_DOWN"):
         raise OSError("network is unreachable")
+    elif "--published" in sys.argv:
+        if not (os.environ.get("FAKE_PUBLIC") or seeded):
+            print("package t is not in the registry or not public", file=sys.stderr); sys.exit(4)
+    elif os.environ.get("FAKE_PUBLIC") or seeded:
+        print("ghcr.io/owner/repo/t@sha256:d")
     else:
         print("candidate src-abc is not in the registry or not public", file=sys.stderr); sys.exit(4)
 """
 
-# podman and srun: log the arguments, print a line, exit as told.
+# podman, srun, and gh: log the arguments, print a line, exit as told (gh by FAKE_GH_EXIT).
 FAKE_RUNNER = """#!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
 echo ok
@@ -38,8 +44,9 @@ class ScriptTests(unittest.TestCase):
         for s in ("build", "push", "test", "record"):
             shutil.copy(SCRIPTS / s, self.repo / "scripts")
         (self.repo / "scripts" / "check.py").write_text(FAKE_CHECK)
-        for prog in ("podman", "srun"):
-            (self.bin / prog).write_text(FAKE_RUNNER); (self.bin / prog).chmod(0o755)
+        for prog in ("podman", "srun", "gh"):
+            (self.bin / prog).write_text(FAKE_RUNNER.replace("FAKE_EXIT", "FAKE_GH_EXIT") if prog == "gh" else FAKE_RUNNER)
+            (self.bin / prog).chmod(0o755)
         t = self.repo / "tools" / "t"
         (t / "test").mkdir(parents=True)
         (t / "SKILL.md").write_text("---\nname: t\ndescription: A tool.\nmetadata:\n  version: 1.0.0\n---\n")
@@ -62,11 +69,16 @@ class ScriptTests(unittest.TestCase):
     def test_build_targets_amd64_with_the_source_label(self):
         self.assertEqual(self.run_script("build", "t").returncode, 0)
         self.assertEqual(self.log(), ["build --platform linux/amd64 --label org.opencontainers.image.source=https://github.com/owner/repo --annotation org.opencontainers.image.source=https://github.com/owner/repo -t ghcr.io/owner/repo/t:src-abc -f tools/t/Containerfile tools/t"])
-    def test_push_says_when_the_package_is_private(self):
+    def test_push_seeds_a_new_tools_package_then_pushes(self):
         r = self.run_script("push", "t")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.log(), ["workflow run seed.yml -R owner/repo -f tool=t", "push ghcr.io/owner/repo/t:src-abc"])
+    def test_push_says_when_the_package_is_private(self):
+        # gh refuses the dispatch (no login, or no access): the push goes on and ends as before, with the settings link
+        r = self.run_script("push", "t", FAKE_GH_EXIT="1")
         self.assertEqual(r.returncode, 3)
         self.assertIn("https://github.com/orgs/owner/packages/container/repo%2Ft/settings", r.stdout)
-        self.assertEqual(self.log(), ["push ghcr.io/owner/repo/t:src-abc"])
+        self.assertEqual(self.log(), ["workflow run seed.yml -R owner/repo -f tool=t", "push ghcr.io/owner/repo/t:src-abc"])
     def test_push_does_not_call_a_registry_error_private(self):
         r = self.run_script("push", "t", FAKE_NETWORK_DOWN="1")
         self.assertNotIn(r.returncode, (0, 3))
@@ -79,8 +91,9 @@ class ScriptTests(unittest.TestCase):
         (self.repo / "tools/t/test/__pycache__/x.pyc").write_text("x")
         r = self.run_script("build", "t")
         self.assertEqual(r.returncode, 1); self.assertIn("tools/t has uncommitted changes", r.stderr); self.assertEqual(self.log(), [])
-    def test_push_of_a_public_candidate_succeeds(self):
+    def test_push_of_a_public_candidate_does_not_seed(self):
         self.assertEqual(self.run_script("push", "t", FAKE_PUBLIC="1").returncode, 0)
+        self.assertEqual(self.log(), ["push ghcr.io/owner/repo/t:src-abc"])
     def test_test_runs_by_digest_and_writes_the_record(self):
         r = self.run_script("test", "t", "srun", "--partition=gpu", "--gres=gpu:1", FAKE_PUBLIC="1")
         self.assertEqual(r.returncode, 0, r.stderr)

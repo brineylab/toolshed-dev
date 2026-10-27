@@ -3,10 +3,11 @@
     python3 -I scripts/check.py tools/<name>... [--registry ghcr.io/<owner>/<repo>]
     python3 -I scripts/check.py --candidate tools/<name>   prints <registry>/<name>:src-<tree>
     python3 -I scripts/check.py --resolve tools/<name>     prints <registry>/<name>@<digest>; exits 4 when not readable anonymously
+    python3 -I scripts/check.py --published tools/<name>   exits 0 when the package is readable anonymously, else 4
 
 Checking exits 0 when every directory passes, else prints one `tools/<name>: <reason>`
 line per failure and exits 1. Without --registry the version, candidate, and record
-rules are skipped. --candidate and --resolve take the registry from the origin remote
+rules are skipped. --candidate, --resolve, and --published take the registry from the origin remote
 unless --registry is given. Runs on Python 3.8 or later, since a cluster's login node runs it.
 """
 from __future__ import annotations
@@ -199,11 +200,23 @@ def main() -> int:
     one = p.add_mutually_exclusive_group()
     one.add_argument("--candidate", type=Path, metavar="TOOL_DIR")
     one.add_argument("--resolve", type=Path, metavar="TOOL_DIR")
+    one.add_argument("--published", type=Path, metavar="TOOL_DIR")
     args = p.parse_args()
-    if args.candidate or args.resolve:
-        d = args.candidate or args.resolve
+    if args.candidate or args.resolve or args.published:
+        d = args.candidate or args.resolve or args.published
         registry = (args.registry or registry_of(subprocess.run(
             ["git", "-C", str(d), "remote", "get-url", "origin"], check=True, capture_output=True, text=True).stdout)).lower()
+        if args.published:  # scripts/push seeds a package this cannot read
+            try:
+                tags = published_tags(registry, d.name)
+            except urllib.error.HTTPError as e:
+                if e.code not in (401, 403, 404):
+                    raise
+                tags = set()
+            if not tags:
+                print(f"package {d.name} is not in the registry or not public", file=sys.stderr)
+                return 4
+            return 0
         tag = candidate_tag(d)
         if args.candidate:
             print(f"{registry}/{d.name}:{tag}")
