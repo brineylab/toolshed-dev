@@ -2,6 +2,7 @@
 # scripts/record <name> <image@digest> <exit> <runner> <host> <started> < output: write tools/<name>'s
 # test record, results/<name>/<version>.txt, from a test's output on stdin. scripts/test calls it; so
 # does a caller that ran the test some other way (flyloft, through sbatch), so the format has one owner.
+# Output that holds what looks like a credential is refused: exit 1, and no record.
 set -euo pipefail
 usage() { echo "usage: scripts/record <name> <image@sha256:...> <exit> <runner> <host> <started> < output" >&2; exit 2; }
 [[ $# -eq 6 ]] || usage
@@ -18,4 +19,7 @@ mkdir -p "results/$name"
   printf -- '---\n'
   cat
 } > "results/$name/$version.txt"
+if ! python3 -I scripts/check.py --scan "results/$name/$version.txt"; then  # the record goes public at the merge
+  rm -f "results/$name/$version.txt"; exit 1
+fi
 echo "results/$name/$version.txt"

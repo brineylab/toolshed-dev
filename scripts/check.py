@@ -4,6 +4,7 @@
     python3 -I scripts/check.py --candidate tools/<name>   prints <registry>/<name>:src-<tree>
     python3 -I scripts/check.py --resolve tools/<name>     prints <registry>/<name>@<digest>; exits 4 when not readable anonymously
     python3 -I scripts/check.py --published tools/<name>   exits 0 when the package is readable anonymously, else 4
+    python3 -I scripts/check.py --scan FILE...            exits 1, naming each hit, when a record holds what looks like a credential
 
 Checking exits 0 when every directory passes, else prints one `tools/<name>: <reason>`
 line per failure and exits 1. Without --registry the version, candidate, and record
@@ -23,6 +24,28 @@ from pathlib import Path
 
 NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+
+# What a credential looks like, per line. An assignment's name may carry a prefix (AWS_SECRET_ACCESS_KEY=,
+# WANDB_API_KEY=, as a job's environment prints); a value that starts with `$` (the build secret's
+# `$(cat /run/secrets/...)`) is not an assignment of one.
+SECRETS = [(what, re.compile(rx)) for what, rx in [
+    ("a GitHub token", r"\b(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{80,})"),
+    ("a Hugging Face token", r"\bhf_[A-Za-z0-9]{30,}"),
+    ("an AWS access key", r"\b(AKIA|ASIA)[0-9A-Z]{16}\b"),
+    ("an OpenAI or Anthropic key", r"\bsk-(ant-)?[A-Za-z0-9_-]{20,}"),
+    ("a Slack token", r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
+    ("a private key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    ("a password or token assignment", r"(?i)(?<![a-z0-9])[a-z0-9_]*?(password|passwd|secret|token|api[_-]?key|access[_-]?key)[\"']?\s*[=:]\s*['\"]?[A-Za-z0-9/+_\-]{16,}"),
+]]
+# An ARG stays in an image's history and an ENV in the image, whatever its value. The word must stand
+# alone between underscores, so TOKENIZERS_PARALLELISM is not a credential.
+ARG_ENV = re.compile(r"^\s*(ARG|ENV)\s+(.*)", re.I)
+CREDENTIAL_NAME = re.compile(r"(^|_)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|API_KEY|ACCESS_KEY|PRIVATE_KEY)(_|$)", re.I)
+CREDENTIAL_FILES = {".netrc", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "id_ecdsa", "credentials.json", "kaggle.json", "token.txt"}
+BUILD_SECRET = 'pass a credential as the build secret (CONTRIBUTING, "Weights behind a login")'
+# build sees only committed source, so a credential it refuses is already in a commit.
+UNCOMMIT = "remove it from the commit that added it (amend or rebase) before you push, and revoke it if it was ever pushed"
+RECORD_LEAK = "{}:{} holds what looks like {}; the test's output must not print a credential or the job's environment"
 
 
 def unquote(value: str) -> str:
@@ -58,6 +81,33 @@ def frontmatter(path: Path) -> dict:
     return {}  # no closing ---
 
 
+def is_credential_file(path: Path) -> bool:
+    n = path.name
+    return (n in CREDENTIAL_FILES or n == ".env" or n.startswith(".env.") or path.suffix in (".pem", ".key", ".p12", ".pfx")
+            or (n == "config.json" and path.parent.name == ".docker"))
+
+
+def secrets_in(paths: list[Path], root: Path | None) -> list[tuple[str, int, str]]:
+    """(path relative to root, line, what it looks like) for each credential seen; line 0 for a file named like one.
+
+    A file whose first 8 KiB hold a NUL byte is a binary fixture and is skipped.
+    """
+    hits = []
+    for path in paths:
+        rel = str(path.relative_to(root)) if root else str(path)
+        if is_credential_file(path):
+            hits.append((rel, 0, "a credential file by name"))
+            continue
+        data = path.read_bytes()
+        if b"\0" in data[:8192]:
+            continue
+        for n, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+            what = next((what for what, rx in SECRETS if rx.search(line)), None)  # the most specific shape, once a line
+            if what:
+                hits.append((rel, n, what))
+    return hits
+
+
 def check_tool(tool_dir: Path, published: set[str] | None) -> list[str]:
     """The reasons this directory breaks the rules; empty when it passes."""
     name, reasons, version = tool_dir.name, [], None
@@ -81,12 +131,33 @@ def check_tool(tool_dir: Path, published: set[str] | None) -> list[str]:
     containerfile = tool_dir / "Containerfile"
     if not containerfile.is_file():
         reasons.append("Containerfile is missing")
-    elif "COPY test /toolshed/test" not in containerfile.read_text():
-        reasons.append("Containerfile does not COPY test /toolshed/test")
+    else:
+        text = containerfile.read_text(encoding="utf-8", errors="replace")
+        if "COPY test /toolshed/test" not in text:
+            reasons.append("Containerfile does not COPY test /toolshed/test")
+        lines = text.splitlines()
+        for n, line in enumerate(lines, 1):
+            if n > 1 and lines[n - 2].endswith("\\"):
+                continue  # part of the instruction above
+            for more in lines[n:]:  # an instruction continued over lines with a backslash
+                if not line.endswith("\\"):
+                    break
+                line = line[:-1] + " " + more
+            m = ARG_ENV.match(line)
+            if not m:
+                continue
+            first = re.match(r"[A-Za-z_]\w*", m.group(2))
+            for var in ([first.group(0)] if first else []) + re.findall(r"\s([A-Za-z_]\w*)=", m.group(2)):
+                if CREDENTIAL_NAME.search(var):
+                    reasons.append(f"Containerfile:{n} declares {m.group(1).upper()} {var}: an ARG stays in the image's history "
+                                   f"and an ENV in the image; {BUILD_SECRET}; {UNCOMMIT}")
     if not (tool_dir / "test" / "run.sh").is_file():
         reasons.append("test/run.sh is missing")
     if published is not None and version in published:
         reasons.append(f"version {version} is already published; bump metadata.version")
+    for rel, n, what in secrets_in(sorted(p for p in tool_dir.rglob("*") if p.is_file()), tool_dir):
+        reasons.append(f"{rel} is a credential file by name; a tool never carries one; {UNCOMMIT}" if n == 0 else
+                       f"{rel}:{n} holds what looks like {what}; a tool never carries a credential: {BUILD_SECRET}; {UNCOMMIT}")
     return reasons
 
 
@@ -109,7 +180,7 @@ def check_candidate(tool_dir: Path, tag: str, candidate: tuple[str, str] | None)
         reasons.append(f"{rel} is of {rec.get('digest')}, not the candidate {digest}; test the current candidate")
     if rec.get("exit") != "0":
         reasons.append(f"{rel} shows exit {rec.get('exit')}, not 0")
-    return reasons
+    return reasons + [RECORD_LEAK.format(r, n, what) for r, n, what in secrets_in([path], tool_dir.parents[1])]
 
 
 def registry_of(remote: str) -> str:
@@ -201,7 +272,13 @@ def main() -> int:
     one.add_argument("--candidate", type=Path, metavar="TOOL_DIR")
     one.add_argument("--resolve", type=Path, metavar="TOOL_DIR")
     one.add_argument("--published", type=Path, metavar="TOOL_DIR")
+    one.add_argument("--scan", nargs="+", type=Path, metavar="FILE")
     args = p.parse_args()
+    if args.scan:  # scripts/record, on the record it wrote
+        hits = secrets_in(args.scan, None)
+        for path, n, what in hits:
+            print(RECORD_LEAK.format(path, n, what), file=sys.stderr)
+        return 1 if hits else 0
     if args.candidate or args.resolve or args.published:
         d = args.candidate or args.resolve or args.published
         registry = (args.registry or registry_of(subprocess.run(

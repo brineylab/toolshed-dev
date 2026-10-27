@@ -23,11 +23,11 @@ case "$runner" in
 esac
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 out=$(mktemp)
+trap 'rm -f "$out"' EXIT  # the output may hold what record refuses
 set +e
 "${cmd[@]}" 2>&1 | tee "$out"
 code=${PIPESTATUS[0]}
 set -e
 record=$(scripts/record "$name" "$ref" "$code" "$desc" "$(hostname -f 2> /dev/null || hostname)" "$started" < "$out")
-rm -f "$out"
 echo "record: $record (exit $code)"
 exit "$code"

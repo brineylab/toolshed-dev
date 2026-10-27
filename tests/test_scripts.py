@@ -13,6 +13,8 @@ spec = importlib.util.spec_from_file_location("real_check", {str(SCRIPTS / "chec
 real = importlib.util.module_from_spec(spec); spec.loader.exec_module(real)
 frontmatter = real.frontmatter
 if __name__ == "__main__":
+    if "--scan" in sys.argv or not sys.argv[1].startswith("--"):  # a directory's rules and the scan are the real ones
+        sys.exit(real.main())
     seeded = not os.environ.get("FAKE_GH_EXIT") and any(l.startswith("workflow run seed.yml") for l in
         (open(os.environ["FAKE_LOG"]).read().splitlines() if os.path.exists(os.environ["FAKE_LOG"]) else []))
     if "--candidate" in sys.argv:
@@ -54,9 +56,9 @@ class ScriptTests(unittest.TestCase):
         (t / "test" / "run.sh").write_text("echo ok\n")
         git(self.repo, "init", "-q"); git(self.repo, "add", "-A"); git(self.repo, "commit", "-qm", "t")
 
-    def run_script(self, script, *args, **env):
+    def run_script(self, script, *args, input=None, **env):
         env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}", "FAKE_LOG": str(self.tmp / "log"), **env}
-        return subprocess.run(["bash", str(self.repo / "scripts" / script), *args], cwd=self.repo, env=env, capture_output=True, text=True)
+        return subprocess.run(["bash", str(self.repo / "scripts" / script), *args], cwd=self.repo, env=env, input=input, capture_output=True, text=True)
 
     def log(self):
         p = self.tmp / "log"
@@ -84,6 +86,27 @@ class ScriptTests(unittest.TestCase):
         self.assertNotIn(r.returncode, (0, 3))
         self.assertNotIn("private", r.stdout)
         self.assertIn("network is unreachable", r.stderr)
+    def test_build_refuses_a_tool_holding_a_credential_before_building(self):
+        (self.repo / "tools/t/bin").mkdir()
+        (self.repo / "tools/t/bin/x").write_text("export HF_TOKEN=hf_" + "a" * 34 + "\n")
+        git(self.repo, "add", "-A"); git(self.repo, "commit", "-qm", "leak")
+        r = self.run_script("build", "t")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("tools/t: bin/x:1 holds what looks like a Hugging Face token", r.stdout + r.stderr)
+        self.assertEqual(self.log(), [])  # podman never ran
+    def test_record_refuses_output_holding_a_credential_and_writes_nothing(self):
+        out = "node: n\nGITHUB_TOKEN=ghp_" + "x" * 36 + "\nos=debian\n"
+        r = self.run_script("record", "t", "ghcr.io/owner/repo/t@sha256:d", "0", "podman", "h", "2026-01-01T00:00:00Z", input=out)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("results/t/1.0.0.txt:", r.stderr); self.assertIn("job's environment", r.stderr)
+        self.assertFalse((self.repo / "results/t/1.0.0.txt").exists())
+    def test_test_whose_output_holds_a_credential_leaves_no_copy_behind(self):
+        tmp = self.tmp / "tmpdir"; tmp.mkdir()
+        (self.bin / "podman").write_text("#!/usr/bin/env bash\necho GITHUB_TOKEN=ghp_" + "x" * 36 + "\n")
+        r = self.run_script("test", "t", "podman", FAKE_PUBLIC="1", TMPDIR=str(tmp))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse((self.repo / "results/t/1.0.0.txt").exists())
+        self.assertEqual(list(tmp.iterdir()), [])
     def test_build_refuses_ignored_files_in_the_tool(self):
         (self.repo / ".gitignore").write_text("__pycache__/\n")
         git(self.repo, "add", ".gitignore"); git(self.repo, "commit", "-qm", "ignore")

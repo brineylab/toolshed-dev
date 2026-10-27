@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # scripts/build <name>: build tools/<name> for linux/amd64 as its candidate, <registry>/<name>:src-<tree>,
-# from committed source only. HF_TOKEN, when set, is the build secret hf_token.
+# from committed source only, once the directory passes check.py's rules. HF_TOKEN, when set, is the build
+# secret hf_token.
 set -euo pipefail
 [[ $# -eq 1 ]] || { echo "usage: scripts/build <name>" >&2; exit 2; }
 cd "$(dirname "$0")/.."
 if [[ -n "$(git status --porcelain --ignored -- "tools/$1")" ]]; then
   echo "tools/$1 has uncommitted changes; commit them first" >&2; exit 1
 fi
+python3 -I scripts/check.py "tools/$1" || exit 1  # its rules, a credential among them, before anything is built
 image=$(python3 -I scripts/check.py --candidate "tools/$1")
 repo=${image#*/}; repo=${repo%/"$1":*}
 secret=()
