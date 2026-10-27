@@ -1,0 +1,5 @@
+FROM docker.io/library/debian:bookworm-20261020-slim
+ENV NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=utility
+COPY bin/hello /usr/local/bin/hello
+RUN chmod +x /usr/local/bin/hello
+COPY test /toolshed/test
