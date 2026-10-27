@@ -47,10 +47,19 @@ class PromoteTests(unittest.TestCase):
     def test_a_registry_error_is_not_taken_for_an_unpublished_version(self):
         code, copies, _ = self.promote({"pr-1-abc": "sha256:a", "1.0.0": "error"})
         self.assertEqual((code, copies), (1, []))
-    def test_a_missing_candidate_is_refused(self):
-        code, copies, _ = self.promote({})
-        self.assertNotEqual(code, 0)
-        self.assertEqual(copies, [])
+    def test_a_candidate_this_registry_never_saw_is_skipped(self):
+        # a tool merged in from another shed (the scratch shed's syncs): its candidate lives in that shed's registry
+        code, copies, out = self.promote({})
+        self.assertEqual((code, copies), (0, []))
+        self.assertIn("not in this registry", out)
+        self.assertIn("skipped", out)
+    def test_a_registry_error_on_the_candidate_is_not_taken_for_a_missing_one(self):
+        code, copies, _ = self.promote({"pr-1-abc": "error"})
+        self.assertEqual((code, copies), (1, []))
+    def test_a_promotion_says_what_it_published(self):
+        code, _, out = self.promote({"pr-1-abc": "sha256:a"})
+        self.assertEqual(code, 0)
+        self.assertIn("published ghcr.io/o/r/t:1.0.0 from pr-1-abc", out)
 
 if __name__ == "__main__":
     unittest.main()

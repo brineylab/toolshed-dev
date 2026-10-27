@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # scripts/promote <repository> <candidate tag> <tested digest> <version tag>: copy the image the record
 # tested to the version tag, when the candidate tag still names it. A version tag is never overwritten;
-# re-running after a promote that already succeeded passes.
+# re-running after a promote that already succeeded passes. A candidate this registry has never seen is
+# skipped: the tool was merged in from another shed (a scratch shed syncing the real one), and its image
+# lives in that shed's registry. The last line of stdout says what happened.
 set -euo pipefail
 [[ $# -eq 4 ]] || { echo "usage: scripts/promote <repository> <candidate tag> <tested digest> <version tag>" >&2; exit 2; }
 repo=$1 tag=$2 tested=$3 version=$4
 err=$(mktemp)
-now=$(skopeo inspect --format '{{.Digest}}' "docker://$repo:$tag")
+if ! now=$(skopeo inspect --format '{{.Digest}}' "docker://$repo:$tag" 2> "$err"); then
+  grep -q "manifest unknown" "$err" || { cat "$err" >&2; exit 1; }  # a registry error, not a missing candidate
+  echo "$repo:$tag is not in this registry (a tool merged from another shed): skipped"; exit 0
+fi
 if [[ "$now" != "$tested" ]]; then
   echo "$repo:$tag is $now, but the record tested $tested; test the current candidate" >&2; exit 1
 fi
@@ -15,4 +20,5 @@ if have=$(skopeo inspect --format '{{.Digest}}' "docker://$repo:$version" 2> "$e
   echo "$repo:$version is already published as a different image" >&2; exit 1
 fi
 grep -q "manifest unknown" "$err" || { cat "$err" >&2; exit 1; }
-skopeo copy --preserve-digests "docker://$repo@$tested" "docker://$repo:$version"
+skopeo copy --preserve-digests "docker://$repo@$tested" "docker://$repo:$version" > /dev/null
+echo "published $repo:$version from $tag"
